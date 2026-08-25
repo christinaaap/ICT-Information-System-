@@ -1,159 +1,296 @@
+import { supabase } from '../supabase';
 import {
   User,
+  UserInsert,
+  UserUpdate,
   Asset,
+  AssetInsert,
+  AssetUpdate,
   Ticket,
+  TicketInsert,
+  TicketUpdate,
   Attendance,
+  AttendanceInsert,
+  AttendanceUpdate,
   LeaveRequest,
+  LeaveRequestInsert,
+  LeaveRequestUpdate,
+  LeaveApproval,
+  LeaveApprovalInsert,
+  LeaveApprovalUpdate,
   IctDocument,
+  IctDocumentInsert,
+  IctDocumentUpdate,
 } from '../../src/types';
-import { INITIAL_USERS } from '../../src/data/initialData';
 
-/**
- * DATABASE ABSTRACTION LAYER (SERVER-SIDE)
- * 
- * This module manages server-side data persistence.
- * When integrating with PostgreSQL / Cloud SQL / MySQL / SQLite / Firestore:
- * Simply replace the internal CRUD operations below with your DB driver queries (e.g. pg, prisma, drizzle, knex).
- */
-
-class Database {
-  private users: User[] = [...INITIAL_USERS];
-  private assets: Asset[] = [];
-  private tickets: Ticket[] = [];
-  private attendances: Attendance[] = [];
-  private leaves: LeaveRequest[] = [];
-  private documents: IctDocument[] = [];
-
+export class Database {
   // ==========================
   // USERS REPOSITORY
   // ==========================
-  public getAllUsers(): User[] {
-    return this.users.map(({ password: _, ...u }) => u as User);
+  public async getAllUsers(): Promise<User[]> {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, name, email, department, work_location, role, extension, created_at, must_change_password')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data as User[];
   }
 
-  public findUserById(id: number): User | undefined {
-    return this.users.find(u => u.id === id);
+  public async findUserById(id: number): Promise<User | undefined> {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, name, email, department, work_location, role, extension, created_at, must_change_password')
+      .eq('id', id)
+      .single();
+    if (error) return undefined;
+    return data as User;
   }
 
-  public findUserByEmail(email: string): User | undefined {
-    return this.users.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
+  public async findUserByEmail(email: string): Promise<User | undefined> {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .ilike('email', email.trim())
+      .single();
+    if (error) return undefined;
+    return data as User;
   }
 
-  public createUser(user: User): User {
-    this.users.push(user);
-    return user;
+  public async createUser(user: UserInsert): Promise<User> {
+    const { data, error } = await supabase
+      .from('users')
+      .insert(user)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as User;
   }
 
-  public updateUser(id: number, updates: Partial<User>): User | null {
-    const idx = this.users.findIndex(u => u.id === id);
-    if (idx === -1) return null;
-    this.users[idx] = { ...this.users[idx], ...updates };
-    return this.users[idx];
+  public async updateUser(id: number, updates: UserUpdate): Promise<User | null> {
+    const { data, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) return null;
+    return data as User;
   }
 
-  public deleteUser(id: number): boolean {
-    const initialLen = this.users.length;
-    this.users = this.users.filter(u => u.id !== id);
-    return this.users.length < initialLen;
+  public async deleteUser(id: number): Promise<boolean> {
+    const { error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', id);
+    return !error;
   }
 
   // ==========================
   // ASSETS REPOSITORY
   // ==========================
-  public getAllAssets(): Asset[] {
-    return this.assets;
+  public async getAllAssets(): Promise<Asset[]> {
+    const { data, error } = await supabase
+      .from('assets')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data as Asset[];
   }
 
-  public createAsset(asset: Asset): Asset {
-    this.assets.unshift(asset);
-    return asset;
+  public async createAsset(asset: AssetInsert): Promise<Asset> {
+    const { data, error } = await supabase
+      .from('assets')
+      .insert(asset)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as Asset;
   }
 
-  public updateAsset(id: number, updates: Partial<Asset>): Asset | null {
-    const idx = this.assets.findIndex(a => a.id === id);
-    if (idx === -1) return null;
-    this.assets[idx] = { ...this.assets[idx], ...updates };
-    return this.assets[idx];
+  public async updateAsset(id: number, updates: AssetUpdate): Promise<Asset | null> {
+    const { data, error } = await supabase
+      .from('assets')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) return null;
+    return data as Asset;
   }
 
-  public deleteAsset(id: number): boolean {
-    const initialLen = this.assets.length;
-    this.assets = this.assets.filter(a => a.id !== id);
-    return this.assets.length < initialLen;
+  public async deleteAsset(id: number): Promise<boolean> {
+    const { error } = await supabase
+      .from('assets')
+      .delete()
+      .eq('id', id);
+    return !error;
   }
 
-  public bulkInsertAssets(newAssets: Asset[]): Asset[] {
-    this.assets = [...newAssets, ...this.assets];
-    return this.assets;
+  public async bulkInsertAssets(newAssets: AssetInsert[]): Promise<Asset[]> {
+    const { data, error } = await supabase
+      .from('assets')
+      .upsert(newAssets, { onConflict: 'serial_number' })
+      .select();
+    if (error) throw error;
+    return data as Asset[];
   }
 
-  public clearAssets(): void {
-    this.assets = [];
+  public async clearAssets(): Promise<void> {
+    await supabase.from('assets').delete().neq('id', 0);
   }
 
   // ==========================
   // TICKETS REPOSITORY
   // ==========================
-  public getAllTickets(): Ticket[] {
-    return this.tickets;
+  public async getAllTickets(): Promise<Ticket[]> {
+    const { data, error } = await supabase
+      .from('tickets')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data as Ticket[];
   }
 
-  public createTicket(ticket: Ticket): Ticket {
-    this.tickets.unshift(ticket);
-    return ticket;
+  public async createTicket(ticket: TicketInsert): Promise<Ticket> {
+    const { data, error } = await supabase
+      .from('tickets')
+      .insert(ticket)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as Ticket;
   }
 
-  public updateTicketStatus(id: number, status: Ticket['status'], notes?: string): Ticket | null {
-    const idx = this.tickets.findIndex(t => t.id === id);
-    if (idx === -1) return null;
-    this.tickets[idx] = {
-      ...this.tickets[idx],
-      status,
-      resolution_notes: notes || this.tickets[idx].resolution_notes,
-      updated_at: new Date().toISOString(),
-    };
-    return this.tickets[idx];
+  public async updateTicketStatus(
+    id: number,
+    status: Ticket['status'],
+    notes?: string
+  ): Promise<Ticket | null> {
+    const { data, error } = await supabase
+      .from('tickets')
+      .update({
+        status,
+        resolution_notes: notes,
+        updated_at: new Date().toISOString(),
+      } satisfies TicketUpdate)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) return null;
+    return data as Ticket;
   }
 
-  public deleteTicket(id: number): boolean {
-    const initialLen = this.tickets.length;
-    this.tickets = this.tickets.filter(t => t.id !== id);
-    return this.tickets.length < initialLen;
+  public async deleteTicket(id: number): Promise<boolean> {
+    const { error } = await supabase
+      .from('tickets')
+      .delete()
+      .eq('id', id);
+    return !error;
   }
 
-  public clearTickets(): void {
-    this.tickets = [];
+  public async clearTickets(): Promise<void> {
+    await supabase.from('tickets').delete().neq('id', 0);
   }
 
   // ==========================
   // ATTENDANCES REPOSITORY
   // ==========================
-  public getAllAttendances(): Attendance[] {
-    return this.attendances;
+  public async getAllAttendances(): Promise<Attendance[]> {
+    const { data, error } = await supabase
+      .from('attendances')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data as Attendance[];
   }
 
-  public createAttendance(att: Attendance): Attendance {
-    this.attendances.unshift(att);
-    return att;
+  public async createAttendance(att: AttendanceInsert): Promise<Attendance> {
+    const { data, error } = await supabase
+      .from('attendances')
+      .insert(att)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as Attendance;
   }
 
-  public clearAttendances(): void {
-    this.attendances = [];
+  public async clearAttendances(): Promise<void> {
+    await supabase.from('attendances').delete().neq('id', 0);
   }
 
   // ==========================
   // LEAVE REPOSITORY
   // ==========================
-  public getAllLeaves(): LeaveRequest[] {
-    return this.leaves;
+  public async getAllLeaves(): Promise<LeaveRequest[]> {
+    const { data: leaves, error } = await supabase
+      .from('leave_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+
+    const { data: approvals } = await supabase
+      .from('leave_approvals')
+      .select('*');
+
+    const approvalsByLeave = (approvals || []).reduce((acc, a) => {
+      if (!acc[a.leave_id]) acc[a.leave_id] = [];
+      acc[a.leave_id].push(a as LeaveApproval);
+      return acc;
+    }, {} as Record<number, LeaveApproval[]>);
+
+    return (leaves as LeaveRequest[]).map(leave => ({
+      ...leave,
+      approvals: approvalsByLeave[leave.id] || [],
+    }));
   }
 
-  public createLeave(leave: LeaveRequest): LeaveRequest {
-    this.leaves.unshift(leave);
-    return leave;
+  public async createLeave(leaveData: LeaveRequestInsert): Promise<LeaveRequest> {
+    const { data: createdLeave, error } = await supabase
+      .from('leave_requests')
+      .insert(leaveData)
+      .select()
+      .single();
+    if (error) throw error;
+
+    const defaultApprovals: LeaveApprovalInsert[] = [
+      {
+        leave_id: createdLeave.id,
+        approver_id: null,
+        approver_name: 'Direct Leader / SPV',
+        approver_role: 'leader',
+        step_order: 1,
+        status: 'Pending',
+        signature_data: null,
+        approved_at: null,
+      },
+      {
+        leave_id: createdLeave.id,
+        approver_id: null,
+        approver_name: 'CSBO Section Head',
+        approver_role: 'csbo',
+        step_order: 2,
+        status: 'Pending',
+        signature_data: null,
+        approved_at: null,
+      },
+      {
+        leave_id: createdLeave.id,
+        approver_id: null,
+        approver_name: 'SPMO Department Manager',
+        approver_role: 'spmo',
+        step_order: 3,
+        status: 'Pending',
+        signature_data: null,
+        approved_at: null,
+      },
+    ];
+
+    await supabase.from('leave_approvals').insert(defaultApprovals);
+
+    return { ...createdLeave, approvals: defaultApprovals } as LeaveRequest;
   }
 
-  public updateLeaveApproval(
+  public async updateLeaveApproval(
     leaveId: number,
     stepOrder: number,
     approverId: number,
@@ -161,61 +298,94 @@ class Database {
     status: 'Approved' | 'Rejected',
     signatureData: string,
     notes?: string
-  ): LeaveRequest | null {
-    const leaveIdx = this.leaves.findIndex(l => l.id === leaveId);
-    if (leaveIdx === -1) return null;
-
-    const leave = this.leaves[leaveIdx];
-    const approvalIdx = leave.approvals.findIndex(a => a.step_order === stepOrder);
-
-    if (approvalIdx !== -1) {
-      leave.approvals[approvalIdx] = {
-        ...leave.approvals[approvalIdx],
+  ): Promise<LeaveRequest | null> {
+    const approvalStatus = status as 'Pending' | 'Approved' | 'Rejected';
+    const { data: approval, error: approvalError } = await supabase
+      .from('leave_approvals')
+      .update({
         approver_id: approverId,
         approver_name: approverName,
-        status,
+        status: approvalStatus,
         signature_data: signatureData,
         approved_at: new Date().toISOString(),
-        notes: notes || leave.approvals[approvalIdx].notes,
-      };
-    }
+        notes: notes || null,
+      } satisfies LeaveApprovalUpdate)
+      .eq('leave_id', leaveId)
+      .eq('step_order', stepOrder)
+      .select()
+      .single();
+
+    if (approvalError) return null;
+
+    const { data: leave, error: leaveError } = await supabase
+      .from('leave_requests')
+      .select('*')
+      .eq('id', leaveId)
+      .single();
+
+    if (leaveError) return null;
+
+    let newStatus: 'Pending' | 'Approved' | 'Rejected' = leave.status as 'Pending' | 'Approved' | 'Rejected';
+    let newStep = leave.current_step;
 
     if (status === 'Rejected') {
-      leave.status = 'Rejected';
+      newStatus = 'Rejected';
     } else if (stepOrder === 3 && status === 'Approved') {
-      leave.status = 'Approved';
+      newStatus = 'Approved';
     } else if (status === 'Approved') {
-      leave.current_step = stepOrder + 1;
+      newStep = stepOrder + 1;
     }
 
-    this.leaves[leaveIdx] = { ...leave };
-    return this.leaves[leaveIdx];
+    await supabase
+      .from('leave_requests')
+      .update({ status: newStatus, current_step: newStep } satisfies LeaveRequestUpdate)
+      .eq('id', leaveId);
+
+    const { data: allApprovals } = await supabase
+      .from('leave_approvals')
+      .select('*')
+      .eq('leave_id', leaveId);
+
+    return { ...leave, status: newStatus, current_step: newStep, approvals: allApprovals || [] } as LeaveRequest;
   }
 
-  public clearLeaves(): void {
-    this.leaves = [];
+  public async clearLeaves(): Promise<void> {
+    await supabase.from('leave_approvals').delete().neq('id', 0);
+    await supabase.from('leave_requests').delete().neq('id', 0);
   }
 
   // ==========================
   // DOCUMENTS REPOSITORY
   // ==========================
-  public getAllDocuments(): IctDocument[] {
-    return this.documents;
+  public async getAllDocuments(): Promise<IctDocument[]> {
+    const { data, error } = await supabase
+      .from('ict_documents')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data as IctDocument[];
   }
 
-  public createDocument(doc: IctDocument): IctDocument {
-    this.documents.unshift(doc);
-    return doc;
+  public async createDocument(doc: IctDocumentInsert): Promise<IctDocument> {
+    const { data, error } = await supabase
+      .from('ict_documents')
+      .insert(doc)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as IctDocument;
   }
 
-  public deleteDocument(id: number): boolean {
-    const initialLen = this.documents.length;
-    this.documents = this.documents.filter(d => d.id !== id);
-    return this.documents.length < initialLen;
+  public async deleteDocument(id: number): Promise<boolean> {
+    const { error } = await supabase
+      .from('ict_documents')
+      .delete()
+      .eq('id', id);
+    return !error;
   }
 
-  public clearDocuments(): void {
-    this.documents = [];
+  public async clearDocuments(): Promise<void> {
+    await supabase.from('ict_documents').delete().neq('id', 0);
   }
 }
 
