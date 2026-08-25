@@ -78,7 +78,7 @@ export function App() {
     } catch (e) {
       console.error(e);
     }
-    return INITIAL_USERS[0]; // Default to Admin for full demo exploration
+    return null; // Always show Login page by default
   });
 
   // Navigation Module
