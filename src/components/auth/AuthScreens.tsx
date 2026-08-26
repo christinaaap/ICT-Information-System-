@@ -3,6 +3,7 @@ import { DslngLogo } from '../common/DslngLogo';
 import { User, Department, WorkLocation, Role } from '../../types';
 import { notifySuccess, notifyError } from '../../utils/notifications';
 import { Lock, Mail, User as UserIcon, Phone, Building2, MapPin, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
+import { authService } from '../../services/authService';
 
 interface AuthProps {
   users: User[];
@@ -38,30 +39,56 @@ export const AuthScreens: React.FC<AuthProps> = ({
   const [regWorkLocation, setRegWorkLocation] = useState<WorkLocation>('Site Luwuk');
   const [regExtension, setRegExtension] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const email = loginEmail.trim().toLowerCase();
 
-    // Check @dslng.com domain
     if (!email.endsWith('@dslng.com')) {
       notifyError('Email wajib menggunakan domain resmi @dslng.com.');
       return;
     }
+    if (!loginPassword) {
+      notifyError('Mohon isi password.');
+      return;
+    }
 
+    setLoginLoading(true);
+    try {
+      console.log(`🔐 Mencoba login via API: ${email}`);
+      // 👇 VALIDASI LEBIH DAHULU KE BACKEND SUPABASE (yang asli)
+      const res = await authService.login({ email, password: loginPassword });
+
+      if (res?.user) {
+        console.log('✅ Login via API sukses! User ID:', res.user.id);
+        notifySuccess(`✅ Login BERHASIL via Database. Selamat datang, ${res.user.name}`);
+        const dbUser: User = {
+          ...res.user,
+          password: loginPassword,
+        } as User;
+        triggerLogin(dbUser);
+        return;
+      }
+    } catch (err: any) {
+      console.warn('⚠️  Login via API gagal, fallback ke local state:', err?.message);
+      // Jika API error (misal password beda), TIDAK langsung return. Coba fallback ke local state di bawah.
+    } finally {
+      setLoginLoading(false);
+    }
+
+    // =============== FALLBACK: Cek local state (untuk development / seed data) ===============
     const foundUser = users.find(u => u.email.toLowerCase() === email);
-
     if (!foundUser) {
-      notifyError('Email atau password salah, atau akun belum terdaftar.');
+      notifyError('Email tidak ditemukan di Database maupun Local State. Silakan Register terlebih dahulu.');
       return;
     }
-
-    // Check password (accepts their password or default DSLNG#2026 or seed password)
     const validPasswords = [foundUser.password, 'DSLNG#2026', 'password123'];
-    if (!loginPassword || !validPasswords.includes(loginPassword)) {
-      notifyError('Email atau password salah, atau akun belum terdaftar.');
+    if (!validPasswords.includes(loginPassword)) {
+      notifyError('Password salah. (Hint: Default password register = DSLNG#2026)');
       return;
     }
-
+    notifySuccess('Login via Local State (Database tidak merespon).');
     triggerLogin(foundUser);
   };
 

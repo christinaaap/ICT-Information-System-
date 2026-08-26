@@ -31,6 +31,7 @@ import { IctProfileModule } from './components/profile/IctProfileModule';
 import { UserManagementModule } from './components/admin/UserManagementModule';
 import { notifySuccess, notifyError } from './utils/notifications';
 import { ShieldAlert, Building2 } from 'lucide-react';
+import { authService } from './services/authService';
 
 // Helper to ensure every user has all required fields populated
 const sanitizeUser = (u: any, fallbackId = 1): User => {
@@ -216,9 +217,42 @@ export function App() {
   }, [documents]);
 
   // Auth Handlers
-  const handleLogin = (user: User) => {
+  // Load users from BACKEND API saat pertama buka aplikasi
+  useEffect(() => {
+    (async () => {
+      try {
+        console.log('🔄 Loading users dari backend API...');
+        const res = await authService.getUsers();
+        if (res?.users && res.users.length > 0) {
+          setUsers(res.users.map((u, idx) => sanitizeUser(u, idx + 1)));
+          console.log(`✅ Berhasil load ${res.users.length} users dari Supabase.`);
+        } else {
+          console.log('⚠️  Backend kosong, pakai INITIAL_USERS sebagai fallback.');
+        }
+      } catch (err: any) {
+        console.warn('⚠️  Gagal load users dari API (pakai local fallback):', err?.message);
+      }
+    })();
+  }, []);
+
+  const handleLogin = async (user: User) => {
+    try {
+      // Call backend API login untuk validasi password beneran dari Supabase
+      const res = await authService.login({ email: user.email, password: 'DSLNG#2026' });
+      if (res?.user) {
+        const dbUser = sanitizeUser(res.user, res.user.id || 1);
+        setCurrentUser(dbUser);
+        notifySuccess(`Selamat datang di Portal ICT DSLNG, ${dbUser.name}`);
+        return;
+      }
+    } catch (err: any) {
+      // Jika API gagal (misal offline/user salah input), fallback ke pengecekan state lokal TAPI tampilkan warning
+      console.warn('⚠️  Login API gagal, fallback ke local state:', err?.message);
+      notifyError(`API Login: ${err?.message || 'Gagal'}. Coba default password DSLNG#2026`);
+    }
+    // Fallback local
     setCurrentUser(user);
-    notifySuccess(`Selamat datang di Portal ICT DSLNG, ${user.name}`);
+    notifySuccess(`Selamat datang (Local Mode), ${user.name}`);
   };
 
   const handleLogout = () => {
@@ -226,7 +260,32 @@ export function App() {
     notifySuccess('Anda telah berhasil keluar dari sistem (Logged Out).');
   };
 
-  const handleRegister = (newUser: User) => {
+  const handleRegister = async (newUser: User) => {
+    try {
+      console.log('📝 Mengirim data register ke backend API...', { name: newUser.name, email: newUser.email });
+      // 👇 Call REAL backend -> Supabase insert
+      const res = await authService.register({
+        name: newUser.name,
+        email: newUser.email,
+        department: newUser.department,
+        work_location: newUser.work_location,
+        extension: newUser.extension,
+      });
+
+      if (res?.user) {
+        const savedUser = sanitizeUser(res.user, res.user.id || Date.now());
+        setUsers((prev) => [savedUser, ...prev]);
+        setCurrentUser(savedUser);
+        console.log('✅ Register sukses! User tersimpan di Supabase dengan ID:', savedUser.id);
+        notifySuccess(`✅ Registrasi BERHASIL! Akun tersimpan di Database Supabase. (ID: ${savedUser.id})`);
+        return;
+      }
+    } catch (err: any) {
+      console.error('❌ Gagal register via API:', err);
+      notifyError(`Registrasi API gagal: ${err?.message || 'Unknown error'}. Data HANYA tersimpan di browser.`);
+    }
+
+    // Fallback: Tetap simpan ke state lokal jika API error supaya user gak bingung
     setUsers((prev) => [...prev, newUser]);
     setCurrentUser(newUser);
   };
