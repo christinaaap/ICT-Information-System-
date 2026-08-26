@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# 🔥 Semua request /api/* diarahkan ke Netlify Serverless Function
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+# Fallback untuk React SPA (supaya refresh halaman tidak 404)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
