@@ -1,3 +1,6 @@
+// ⚠️ DOTENV HARUS PALING ATAS! Supabase membaca process.env saat import time.
+import 'dotenv/config';
+
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
