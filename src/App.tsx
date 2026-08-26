@@ -52,9 +52,8 @@ const sanitizeUser = (u: any, fallbackId = 1): User => {
 
 export function App() {
   // Authentication & Users State
-  // ⚠️ SUMBER KEBENARAN UTAMA: API SUPABASE (backend), BUKAN localStorage!
-  // Init pakai INITIAL_USERS dulu, nanti useEffect() di bawah akan overwrite dengan data ASLI dari DB.
-  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
+  // 🔥 SUMBER KEBENARAN TUNGGAL (SSOT): HANYA SUPABASE! JANGAN PERCAYA localStorage untuk users.
+  const [users, setUsers] = useState<User[]>([]); // Awal KOSONG, nanti useEffect fetch API isi
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
@@ -168,10 +167,11 @@ export function App() {
     }
   });
 
-  // Sync to LocalStorage
+  // Sync to LocalStorage (users TIDAK disimpan ke localStorage lagi! Supabase = SSOT)
   useEffect(() => {
-    localStorage.setItem('dslng_users', JSON.stringify(users));
-  }, [users]);
+    // Hapus sisa cache users lama agar TIDAK BISA digunakan lagi
+    try { localStorage.removeItem('dslng_users'); } catch (_) { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     if (currentUser) {
@@ -205,43 +205,71 @@ export function App() {
     localStorage.setItem('dslng_documents', JSON.stringify(documents));
   }, [documents]);
 
-  // Auth Handlers
-  // Load users from BACKEND API saat pertama buka aplikasi
-  useEffect(() => {
-    (async () => {
-      try {
-        console.log('🔄 Loading users dari backend API...');
-        const res = await authService.getUsers();
-        if (res?.users && res.users.length > 0) {
-          setUsers(res.users.map((u, idx) => sanitizeUser(u, idx + 1)));
-          console.log(`✅ Berhasil load ${res.users.length} users dari Supabase.`);
-        } else {
-          console.log('⚠️  Backend kosong, pakai INITIAL_USERS sebagai fallback.');
-        }
-      } catch (err: any) {
-        console.warn('⚠️  Gagal load users dari API (pakai local fallback):', err?.message);
+  // 🔄 Reusable function: AMBIL USER LIST DARI DATABASE SETIAP SAAT DIBUTUHKAN
+  // (dipanggil saat mount, setelah register, setelah update/delete user, dst)
+  const reloadUsers = async (silent = false) => {
+    try {
+      if (!silent) console.log('🔄 [SSOT] Reload users dari Supabase API...');
+      const res = await authService.getUsers();
+      if (res?.users && res.users.length > 0) {
+        const cleaned = res.users.map((u, idx) => sanitizeUser(u, idx + 1));
+        setUsers(cleaned);
+        if (!silent) console.log(`✅ [SSOT] Berhasil load ${cleaned.length} users. Source = Database Supabase.`);
+        return cleaned;
       }
-    })();
+      // Jika DB kosong (misal project baru), fallback ke INITIAL_USERS TAPI LANGSUNG INSERT ke DB
+      console.warn('⚠️  [SSOT] Database users KOSONG! Insert INITIAL_USERS (admin default) via register API...');
+      for (const seed of INITIAL_USERS) {
+        try {
+          await authService.register({
+            name: seed.name,
+            email: seed.email,
+            department: seed.department,
+            work_location: seed.work_location,
+            extension: seed.extension,
+          });
+        } catch (_e) { /* email sudah ada = ignore */ }
+      }
+      const res2 = await authService.getUsers();
+      if (res2?.users) {
+        const cleaned = res2.users.map((u, idx) => sanitizeUser(u, idx + 1));
+        setUsers(cleaned);
+        return cleaned;
+      }
+      return [];
+    } catch (err: any) {
+      console.warn('❌ [SSOT] Gagal reload users dari API:', err?.message);
+      return [];
+    }
+  };
+
+  // Auth Handlers - saat mount, WAJIB fetch users dari database!
+  useEffect(() => {
+    void reloadUsers();
   }, []);
 
-  const handleLogin = async (user: User) => {
+  // passwordPassed = password yang user KETIK di form login (jika ada, opsional)
+  const handleLogin = async (user: User, passwordPassed?: string) => {
+    const passwordToUse = passwordPassed || user.password || 'DSLNG#2026';
     try {
-      // Call backend API login untuk validasi password beneran dari Supabase
-      const res = await authService.login({ email: user.email, password: 'DSLNG#2026' });
+      console.log(`🔐 [SSOT] Login via API: ${user.email} (pwd length: ${passwordToUse.length})`);
+      const res = await authService.login({ email: user.email, password: passwordToUse });
       if (res?.user) {
+        // Data user 100% dari DATABASE (role, dept, dll = sesuai DB = sama dengan Netlify)
         const dbUser = sanitizeUser(res.user, res.user.id || 1);
         setCurrentUser(dbUser);
-        notifySuccess(`Selamat datang di Portal ICT DSLNG, ${dbUser.name}`);
+        // Reload users list dari DB (localhost pasti SAMA dengan Netlify)
+        await reloadUsers(true);
+        notifySuccess(`✅ [Database Mode] Selamat datang ${dbUser.name}! [Role: ${dbUser.role.toUpperCase()}]`);
         return;
       }
     } catch (err: any) {
-      // Jika API gagal (misal offline/user salah input), fallback ke pengecekan state lokal TAPI tampilkan warning
-      console.warn('⚠️  Login API gagal, fallback ke local state:', err?.message);
-      notifyError(`API Login: ${err?.message || 'Gagal'}. Coba default password DSLNG#2026`);
+      console.warn('⚠️  [SSOT] Login via API gagal, fallback ke local state:', err?.message);
+      notifyError(`API Login: ${err?.message || 'Gagal'}. (Hint: default password = DSLNG#2026 / password123)`);
     }
-    // Fallback local
+    // Fallback local (hanya jika API benar-benar tidak bisa)
     setCurrentUser(user);
-    notifySuccess(`Selamat datang (Local Mode), ${user.name}`);
+    notifySuccess(`Selamat datang (Local Mode - tidak sinkron DB), ${user.name}`);
   };
 
   const handleLogout = () => {
@@ -251,8 +279,7 @@ export function App() {
 
   const handleRegister = async (newUser: User) => {
     try {
-      console.log('📝 Mengirim data register ke backend API...', { name: newUser.name, email: newUser.email });
-      // 👇 Call REAL backend -> Supabase insert
+      console.log('📝 [SSOT] Register user baru ke Supabase:', newUser.email);
       const res = await authService.register({
         name: newUser.name,
         email: newUser.email,
@@ -263,18 +290,17 @@ export function App() {
 
       if (res?.user) {
         const savedUser = sanitizeUser(res.user, res.user.id || Date.now());
-        setUsers((prev) => [savedUser, ...prev]);
+        // 🔥 PENTING: Set state + RELOAD DARI DB biar localhost = Netlify (urutan ID dll konsisten)
         setCurrentUser(savedUser);
-        console.log('✅ Register sukses! User tersimpan di Supabase dengan ID:', savedUser.id);
-        notifySuccess(`✅ Registrasi BERHASIL! Akun tersimpan di Database Supabase. (ID: ${savedUser.id})`);
+        await reloadUsers(true);
+        notifySuccess(`✅ Registrasi BERHASIL! [ID: ${savedUser.id}] Data TERSINKRON ke Database Supabase.`);
         return;
       }
     } catch (err: any) {
-      console.error('❌ Gagal register via API:', err);
-      notifyError(`Registrasi API gagal: ${err?.message || 'Unknown error'}. Data HANYA tersimpan di browser.`);
+      console.error('❌ [SSOT] Gagal register via API:', err);
+      notifyError(`Registrasi API gagal: ${err?.message || 'Unknown error'}. Coba cek koneksi.`);
     }
-
-    // Fallback: Tetap simpan ke state lokal jika API error supaya user gak bingung
+    // Fallback jika TOTAL offline (jarang terjadi)
     setUsers((prev) => [...prev, newUser]);
     setCurrentUser(newUser);
   };
@@ -301,20 +327,55 @@ export function App() {
     }
   };
 
-  // User Management Handlers (Admin Only)
-  const handleUpdateUser = (updatedUser: User) => {
-    setUsers((prev) => prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
-    if (currentUser && currentUser.id === updatedUser.id) {
-      setCurrentUser(updatedUser);
+  // User Management Handlers (Admin Only) - SEMUA MELALUI DB SUPABASE!
+  const handleUpdateUser = async (updatedUser: User) => {
+    try {
+      const res = await authService.updateUser(updatedUser.id, updatedUser);
+      if (res?.user) {
+        notifySuccess(`✅ User ${res.user.name} berhasil di-UPDATE (tersimpan ke Database).`);
+      }
+    } catch (err: any) {
+      notifyError(`Gagal update user via API: ${err?.message || ''}`);
+    } finally {
+      // Paksa RELOAD dari DB → localhost & Netlify PASTI SAMA
+      await reloadUsers();
+      if (currentUser?.id === updatedUser.id) {
+        // Kalau current user sendiri yang di-update, refresh data sessionnya
+        const fresh = await authService.getUsers().catch(() => ({ users: [] as User[] }));
+        const me = fresh?.users?.find((u: User) => u.id === currentUser?.id) as User | undefined;
+        if (me) setCurrentUser(sanitizeUser(me, me.id));
+      }
     }
   };
 
-  const handleAddUser = (newUser: User) => {
-    setUsers((prev) => [newUser, ...prev]);
+  const handleAddUser = async (newUser: User) => {
+    try {
+      const res = await authService.register({
+        name: newUser.name,
+        email: newUser.email,
+        department: newUser.department,
+        work_location: newUser.work_location,
+        extension: newUser.extension,
+      });
+      if (res?.user) {
+        notifySuccess(`✅ User ${res.user.name} BERHASIL DITAMBAHKAN & tersimpan ke Database.`);
+      }
+    } catch (err: any) {
+      notifyError(`Gagal tambah user via API: ${err?.message || ''}`);
+    } finally {
+      await reloadUsers();
+    }
   };
 
-  const handleDeleteUser = (userId: number) => {
-    setUsers((prev) => prev.filter((u) => u.id !== userId));
+  const handleDeleteUser = async (userId: number) => {
+    try {
+      await authService.deleteUser(userId);
+      notifySuccess(`🗑️ User BERHASIL DIHAPUS dari Database.`);
+    } catch (err: any) {
+      notifyError(`Gagal hapus user via API: ${err?.message || ''}`);
+    } finally {
+      await reloadUsers();
+    }
   };
 
   // Asset Handlers

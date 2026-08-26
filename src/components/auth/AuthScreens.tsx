@@ -94,7 +94,7 @@ export const AuthScreens: React.FC<AuthProps> = ({
       console.log('   → Lokasi:', finalUser.work_location);
 
       notifySuccess(`✅ Login BERHASIL (Database). Hi ${finalUser.name}! [Role: ${finalUser.role.toUpperCase()}]`);
-      triggerLogin(finalUser);
+      triggerLogin(finalUser, loginPassword); // 🔥 Pass REAL password user KETIK ke handleLogin App.tsx
       setLoginLoading(false);
       return;
     }
@@ -123,7 +123,7 @@ export const AuthScreens: React.FC<AuthProps> = ({
     console.warn('   → Role di local state:', localUser.role);
     console.warn('   → Ini BISA BERBEDA dengan role di Supabase database.');
     notifySuccess(`⚠️  Login via Local State (API DB error).\nRole SAAT INI: ${localUser.role.toUpperCase()} — MUNGKIN BERBEDA dengan DB!`);
-    triggerLogin(localUser);
+    triggerLogin(localUser, loginPassword); // 🔥 Tetap pass REAL password untuk fallback login
   };
 
   const handleRegister = (e: React.FormEvent) => {
