@@ -52,20 +52,9 @@ const sanitizeUser = (u: any, fallbackId = 1): User => {
 
 export function App() {
   // Authentication & Users State
-  const [users, setUsers] = useState<User[]>(() => {
-    try {
-      const saved = localStorage.getItem('dslng_users');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((u, idx) => sanitizeUser(u, idx + 1));
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return INITIAL_USERS;
-  });
+  // ⚠️ SUMBER KEBENARAN UTAMA: API SUPABASE (backend), BUKAN localStorage!
+  // Init pakai INITIAL_USERS dulu, nanti useEffect() di bawah akan overwrite dengan data ASLI dari DB.
+  const [users, setUsers] = useState<User[]>(INITIAL_USERS);
 
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {

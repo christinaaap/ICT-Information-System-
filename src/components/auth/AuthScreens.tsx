@@ -55,41 +55,75 @@ export const AuthScreens: React.FC<AuthProps> = ({
     }
 
     setLoginLoading(true);
+
+    // ==========================================================
+    // 🔍 DEBUG BANDINGKAN DATA LOCAL VS DATABASE (cetak ke Console F12)
+    // ==========================================================
+    const localUser = users.find(u => u.email.toLowerCase() === email);
+    console.groupCollapsed(`🔍 DEBUG Login: ${email}`);
+    console.log('👤 Data di Local React state (localStorage):', localUser ? { id: localUser.id, name: localUser.name, role: localUser.role } : '❌ TIDAK ADA');
+    console.log('🔑 Password yang dimasukkan user:', loginPassword);
+    console.groupEnd();
+
+    let apiUser: User | null = null;
+    let apiError: string = '';
+
     try {
-      console.log(`🔐 Mencoba login via API: ${email}`);
-      // 👇 VALIDASI LEBIH DAHULU KE BACKEND SUPABASE (yang asli)
+      console.log(`🔐 1/2: Validasi via API / Supabase...`);
       const res = await authService.login({ email, password: loginPassword });
-
-      if (res?.user) {
-        console.log('✅ Login via API sukses! User ID:', res.user.id);
-        notifySuccess(`✅ Login BERHASIL via Database. Selamat datang, ${res.user.name}`);
-        const dbUser: User = {
-          ...res.user,
-          password: loginPassword,
-        } as User;
-        triggerLogin(dbUser);
-        return;
-      }
+      apiUser = (res?.user as User) || null;
     } catch (err: any) {
-      console.warn('⚠️  Login via API gagal, fallback ke local state:', err?.message);
-      // Jika API error (misal password beda), TIDAK langsung return. Coba fallback ke local state di bawah.
-    } finally {
-      setLoginLoading(false);
+      apiError = err?.message || 'Terjadi kesalahan';
+      console.warn('⚠️  API Login error:', apiError);
     }
 
-    // =============== FALLBACK: Cek local state (untuk development / seed data) ===============
-    const foundUser = users.find(u => u.email.toLowerCase() === email);
-    if (!foundUser) {
-      notifyError('Email tidak ditemukan di Database maupun Local State. Silakan Register terlebih dahulu.');
+    // ==========================================================
+    // 🎯 PRIORITAS UTAMA: PAKAI DATA DARI API / SUPABASE
+    // (Supabase adalah SUMBER KEBENARAN UTAMA)
+    // ==========================================================
+    if (apiUser) {
+      const finalUser: User = {
+        ...apiUser,
+        password: loginPassword,
+      } as User;
+
+      console.log('✅ 2/2: LOGIN VIA DATABASE SUPABASE SUCCESS!');
+      console.log('   → ID   :', finalUser.id);
+      console.log('   → Nama :', finalUser.name);
+      console.log('   → ROLE :', `%c${finalUser.role}`, 'background:#004380;color:#fff;padding:2px 8px;border-radius:4px;font-weight:bold');
+      console.log('   → Lokasi:', finalUser.work_location);
+
+      notifySuccess(`✅ Login BERHASIL (Database). Hi ${finalUser.name}! [Role: ${finalUser.role.toUpperCase()}]`);
+      triggerLogin(finalUser);
+      setLoginLoading(false);
       return;
     }
-    const validPasswords = [foundUser.password, 'DSLNG#2026', 'password123'];
+
+    setLoginLoading(false);
+
+    // ==========================================================
+    // ❌ API GAGAL -> Baru coba FALLBACK KE LOCAL STATE
+    // (beri pesan peringatan JELAS ke user)
+    // ==========================================================
+    console.warn('❌ API Login gagal. Mencoba fallback ke Local React state.');
+
+    if (!localUser) {
+      notifyError(`Login GAGAL!\nAPI: ${apiError}\nDan email tidak ditemukan di Local State.`);
+      return;
+    }
+
+    const validPasswords = [localUser.password, 'DSLNG#2026', 'password123'];
     if (!validPasswords.includes(loginPassword)) {
-      notifyError('Password salah. (Hint: Default password register = DSLNG#2026)');
+      notifyError(`Password salah!\nDatabase API error: ${apiError}`);
       return;
     }
-    notifySuccess('Login via Local State (Database tidak merespon).');
-    triggerLogin(foundUser);
+
+    // 👇 Fallback login dari local state (BISA BEDA ROLE dengan DB!) - tampilkan WARNING
+    console.warn('⚠️  ⚠️  FALLBACK: Login menggunakan DATA LOCAL STATE (bukan dari Database!)');
+    console.warn('   → Role di local state:', localUser.role);
+    console.warn('   → Ini BISA BERBEDA dengan role di Supabase database.');
+    notifySuccess(`⚠️  Login via Local State (API DB error).\nRole SAAT INI: ${localUser.role.toUpperCase()} — MUNGKIN BERBEDA dengan DB!`);
+    triggerLogin(localUser);
   };
 
   const handleRegister = (e: React.FormEvent) => {
